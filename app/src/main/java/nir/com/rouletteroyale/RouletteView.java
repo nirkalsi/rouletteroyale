@@ -10,7 +10,9 @@ import java.util.Random;
 public class RouletteView extends View {
     public interface Listener {
         void onOutOfCoins();
-        void onSpinComplete(int spinsDone);
+        void onSpinComplete(int spinsDone, long win, long bet);
+        void onBigWin(long win, long bet);
+        void onLevelUp(int level, long reward);
         void saveState();
     }
 
@@ -31,6 +33,9 @@ public class RouletteView extends View {
     private int typeIdx = 0;                   // RED
     private int straightNum = 7;               // lucky number for NUM bets
     private long spinsDone = 0;
+    private long xp = 0;
+    private int level = 1;
+    private long levelFlashUntil = 0;
     private long lastRegenAt = System.currentTimeMillis();
 
     private boolean spinning = false;
@@ -46,13 +51,18 @@ public class RouletteView extends View {
     public void setListener(Listener l) { listener = l; }
     public void addCoins(long n) { balance += n; persist(); invalidate(); }
     public long getBalance() { return balance; }
+    public int getLevel() { return level; }
+    public long getSpinsDone() { return spinsDone; }
+    private long xpNeeded() { return level * 500L; }
 
-    public String serialize() { return balance + ";" + spinsDone + ";" + betIdx + ";" + lastRegenAt; }
+    public String serialize() { return balance + ";" + spinsDone + ";" + betIdx + ";" + lastRegenAt + ";" + xp + ";" + level; }
     public void restore(String s) {
         try {
             String[] a = s.split(";");
             balance = Long.parseLong(a[0]);
             spinsDone = Long.parseLong(a[1]);
+            if (a.length > 4) xp = Long.parseLong(a[4]);
+            if (a.length > 5) level = Math.max(1, Integer.parseInt(a[5]));
             betIdx = Math.min(BETS.length - 1, Math.max(0, Integer.parseInt(a[2])));
             if (a.length > 3) lastRegenAt = Long.parseLong(a[3]);
         } catch (Exception ignored) {}
@@ -78,6 +88,7 @@ public class RouletteView extends View {
         long bet = BETS[betIdx];
         if (balance < bet) { if (listener != null) listener.onOutOfCoins(); return; }
         balance -= bet;
+        xp += bet;
         lastWin = 0;
         result = rng.nextInt(37);
         spinning = true;
@@ -114,8 +125,19 @@ public class RouletteView extends View {
             lastWin = win;
             winFlashUntil = System.currentTimeMillis() + 1800;
         }
+        while (xp >= xpNeeded()) {
+            xp -= xpNeeded();
+            level++;
+            long reward = 150L * level;
+            balance += reward;
+            levelFlashUntil = System.currentTimeMillis() + 2000;
+            if (listener != null) listener.onLevelUp(level, reward);
+        }
         persist();
-        if (listener != null) listener.onSpinComplete((int) spinsDone);
+        if (listener != null) {
+            if (win >= 25 * bet) listener.onBigWin(win, bet);
+            listener.onSpinComplete((int) spinsDone, win, bet);
+        }
         invalidate();
     }
 
@@ -144,7 +166,24 @@ public class RouletteView extends View {
         // balance / last result
         p.setTextSize(w * 0.05f);
         p.setColor(0xFFFFFFFF);
-        cv.drawText("COINS  " + balance, w / 2, getHeight() * 0.145f, p);
+        cv.drawText("COINS  " + balance, w / 2, getHeight() * 0.135f, p);
+        // level + xp bar
+        p.setTextSize(w * 0.034f);
+        p.setColor(0xFFA8CBB8);
+        cv.drawText("LV " + level, w * 0.14f, getHeight() * 0.172f, p);
+        float barL = w * 0.24f, barR = w * 0.76f, barY = getHeight() * 0.158f, barH = w * 0.022f;
+        rf.set(barL, barY, barR, barY + barH);
+        p.setColor(0xFF12503C); cv.drawRoundRect(rf, 8, 8, p);
+        float frac = Math.min(1f, xp / (float) xpNeeded());
+        rf.set(barL, barY, barL + (barR - barL) * frac, barY + barH);
+        p.setColor(0xFFFFD700); cv.drawRoundRect(rf, 8, 8, p);
+        if (now < levelFlashUntil) {
+            p.setTextSize(w * 0.055f);
+            p.setColor(0xFFFFD700);
+            p.setFakeBoldText(true);
+            cv.drawText("LEVEL UP!", w / 2, getHeight() * 0.21f, p);
+            p.setFakeBoldText(false);
+        }
         if (result >= 0 && !spinning) {
             p.setColor(result == 0 ? 0xFF2E8B57 : (isRed(result) ? 0xFFFF5252 : 0xFFB0BEC5));
             p.setFakeBoldText(true);
