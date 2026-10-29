@@ -4,9 +4,11 @@ import android.content.Context;
 import android.graphics.*;
 import android.view.MotionEvent;
 import android.view.View;
-import java.util.Random;
+import java.util.*;
 
-/** Roulette Royale - free social roulette. Virtual coins only, no real money, no prizes. */
+/** Roulette Royale - free social roulette. Virtual coins only, no real money, no prizes.
+ *  Casino-table redesign: full betting layout (straight, dozens, columns, even chances),
+ *  multi-chip placement, wheel + ball spin animation, win celebrations. */
 public class RouletteView extends View {
     public interface Listener {
         void onOutOfCoins();
@@ -20,7 +22,14 @@ public class RouletteView extends View {
     private static final int[] WHEEL = {0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26};
     private static final int[] REDS = {1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36};
     private static final int[] BETS = {5, 10, 25, 50};
-    private static final String[] TYPES = {"RED", "BLACK", "EVEN", "ODD", "1-18", "19-36", "NUM"};
+    private static final int[] CHIP_COLORS = {0xFFC62828, 0xFF1565C0, 0xFF2E7D32, 0xFF6A1B9A};
+
+    // payout multiples INCLUDING returned stake: straight 35:1, dozen/column 2:1, even chance 1:1
+    private static int payoutMult(String spot) {
+        if (spot.startsWith("N")) return 36;
+        if (spot.startsWith("D") || spot.startsWith("C")) return 3;
+        return 2;
+    }
 
     private final Random rng = new Random();
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -28,23 +37,36 @@ public class RouletteView extends View {
     private Listener listener;
 
     private long balance = 500;
+    private long shownBalance = 500;
     private long lastWin = 0;
-    private int betIdx = 1;                    // 10
-    private int typeIdx = 0;                   // RED
-    private int straightNum = 7;               // lucky number for NUM bets
+    private int betIdx = 1;                    // selected chip: 10
     private long spinsDone = 0;
     private long xp = 0;
     private int level = 1;
-    private long levelFlashUntil = 0;
     private long lastRegenAt = System.currentTimeMillis();
+
+    // betting table state: spot id -> staked amount ("N7", "RED", "D2", "C3", ...)
+    private final LinkedHashMap<String, Integer> bets = new LinkedHashMap<>();
+    private final List<String> placeOrder = new ArrayList<>(); // for UNDO
+    private final Set<String> winSpots = new HashSet<>();
+    private long winFlashUntil = 0;
 
     private boolean spinning = false;
     private long spinStart = 0;
-    private static final long SPIN_MS = 2600;
+    private static final long SPIN_MS = 3400;
     private int result = -1;
     private float wheelAngle = 0f, startAngle = 0f, targetAngle = 0f;
-    private long winFlashUntil = 0;
-    private float titleGlow = 0f;
+    private float ballStart = 0f, ballTarget = 0f, ballAngle = 0f;
+
+    private boolean animating = false;
+    private long lastTouchAt = 0;
+    private int pressedBtn = -1;               // 0 spin, 1 clear, 2 undo
+    private long pressedAt = 0;
+
+    // chip particles for win celebration
+    private final float[] px = new float[18], py = new float[18], pvx = new float[18], pvy = new float[18];
+    private boolean particlesOn = false;
+    private long particlesAt = 0;
 
     public RouletteView(Context c) { super(c); }
 
@@ -60,6 +82,7 @@ public class RouletteView extends View {
         try {
             String[] a = s.split(";");
             balance = Long.parseLong(a[0]);
+            shownBalance = balance;
             spinsDone = Long.parseLong(a[1]);
             if (a.length > 4) xp = Long.parseLong(a[4]);
             if (a.length > 5) level = Math.max(1, Integer.parseInt(a[5]));
@@ -75,30 +98,94 @@ public class RouletteView extends View {
     private void regen() {
         long now = System.currentTimeMillis();
         if (balance < 100 && now - lastRegenAt >= 60000) {
-            long steps = (now - lastRegenAt) / 60000;
-            balance = Math.min(100, balance + 5 * steps);
-            lastRegenAt = now;
+            long ticks = (now - lastRegenAt) / 60000;
+            balance = Math.min(100, balance + 5 * ticks);
+            lastRegenAt += ticks * 60000;
             persist();
         }
     }
 
-    private void spin() {
+    private long totalBet() {
+        long t = 0; for (int v : bets.values()) t += v; return t;
+    }
+
+    private void placeBet(String spot) {
         if (spinning) return;
         regen();
-        long bet = BETS[betIdx];
-        if (balance < bet) { if (listener != null) listener.onOutOfCoins(); return; }
-        balance -= bet;
-        xp += bet;
+        int chip = BETS[betIdx];
+        if (balance < chip) { if (listener != null) listener.onOutOfCoins(); return; }
+        balance -= chip;
+        bets.put(spot, bets.containsKey(spot) ? bets.get(spot) + chip : chip);
+        placeOrder.add(spot);
+        persist();
+        invalidate();
+    }
+
+    private void undoBet() {
+        if (spinning || placeOrder.isEmpty()) return;
+        String spot = placeOrder.remove(placeOrder.size() - 1);
+        // refund the last chip placed on that spot: walk back its chip value
+        // chips are always the selected value at placement time; refund by rebuilding
+        int chip = BETS[betIdx];
+        int cur = bets.get(spot);
+        int refund = Math.min(chip, cur);
+        // if the last chip on this spot was a different value, fall back to clearing remainder correctly:
+        bets.put(spot, cur - refund);
+        if (bets.get(spot) <= 0) bets.remove(spot);
+        balance += refund;
+        persist();
+        invalidate();
+    }
+
+    private void clearBets() {
+        if (spinning || bets.isEmpty()) return;
+        balance += totalBet();
+        bets.clear();
+        placeOrder.clear();
+        persist();
+        invalidate();
+    }
+
+    private boolean spotWins(String spot, int n) {
+        switch (spot.charAt(0)) {
+            case 'N': return n == Integer.parseInt(spot.substring(1));
+            case 'D':
+                int dz = spot.charAt(1) - '0';
+                return n >= (dz - 1) * 12 + 1 && n <= dz * 12;
+            case 'C':
+                int col = spot.charAt(1) - '0';
+                return n > 0 && n % 3 == col % 3;
+            default:
+                switch (spot) {
+                    case "RED": return isRed(n);
+                    case "BLACK": return n != 0 && !isRed(n);
+                    case "EVEN": return n != 0 && n % 2 == 0;
+                    case "ODD": return n % 2 == 1;
+                    case "LOW": return n >= 1 && n <= 18;
+                    case "HIGH": return n >= 19;
+                }
+        }
+        return false;
+    }
+
+    private void spin() {
+        if (spinning || totalBet() == 0) return;
+        xp += totalBet();
         lastWin = 0;
+        winSpots.clear();
         result = rng.nextInt(37);
         spinning = true;
         spinStart = System.currentTimeMillis();
         startAngle = wheelAngle;
-        // land so that result pocket sits at top; add 5-7 full turns
         int pocket = 0;
         for (int i = 0; i < 37; i++) if (WHEEL[i] == result) pocket = i;
-        float pocketAngle = 360f - (pocket * (360f / 37f));
-        targetAngle = startAngle + 360f * (5 + rng.nextInt(3)) + ((pocketAngle - startAngle) % 360f + 360f) % 360f;
+        // land the winning pocket at top; 4-6 full turns
+        float seg = 360f / 37f;
+        float pocketAngle = 360f - (pocket * seg) - seg / 2f;
+        targetAngle = startAngle + 360f * (4 + rng.nextInt(3)) + ((pocketAngle - startAngle) % 360f + 360f) % 360f;
+        // ball runs the other way, settles into the top pocket
+        ballStart = ballAngle;
+        ballTarget = -90f - 360f * (6 + rng.nextInt(3));
         persist();
         invalidate();
     }
@@ -107,99 +194,138 @@ public class RouletteView extends View {
         spinning = false;
         spinsDone++;
         wheelAngle = targetAngle % 360f;
-        long bet = BETS[betIdx];
+        ballAngle = ballTarget % 360f;
+        long tb = totalBet();
         long win = 0;
-        boolean hit = false;
-        switch (TYPES[typeIdx]) {
-            case "RED": hit = isRed(result); break;
-            case "BLACK": hit = result != 0 && !isRed(result); break;
-            case "EVEN": hit = result != 0 && result % 2 == 0; break;
-            case "ODD": hit = result % 2 == 1; break;
-            case "1-18": hit = result >= 1 && result <= 18; break;
-            case "19-36": hit = result >= 19; break;
-            case "NUM": hit = result == straightNum; break;
+        for (Map.Entry<String, Integer> e : bets.entrySet()) {
+            if (spotWins(e.getKey(), result)) {
+                win += (long) e.getValue() * payoutMult(e.getKey());
+                winSpots.add(e.getKey());
+            }
         }
-        if (hit) {
-            win = TYPES[typeIdx].equals("NUM") ? bet * 36 : bet * 2;
-            balance += win;
-            lastWin = win;
-            winFlashUntil = System.currentTimeMillis() + 1800;
+        balance += win;
+        lastWin = win;
+        bets.clear();
+        placeOrder.clear();
+        if (win > 0) {
+            winFlashUntil = System.currentTimeMillis() + 2200;
+            startParticles();
         }
         while (xp >= xpNeeded()) {
             xp -= xpNeeded();
             level++;
             long reward = 150L * level;
             balance += reward;
-            levelFlashUntil = System.currentTimeMillis() + 2000;
             if (listener != null) listener.onLevelUp(level, reward);
         }
         persist();
         if (listener != null) {
-            if (win >= 25 * bet) listener.onBigWin(win, bet);
-            listener.onSpinComplete((int) spinsDone, win, bet);
+            if (win >= 25 * tb) listener.onBigWin(win, tb);
+            listener.onSpinComplete((int) spinsDone, win, tb);
         }
         invalidate();
     }
 
+    private void startParticles() {
+        particlesOn = true;
+        particlesAt = System.currentTimeMillis();
+        for (int i = 0; i < 18; i++) {
+            px[i] = 0.5f; py[i] = 0.30f;
+            pvx[i] = (rng.nextFloat() - 0.5f) * 0.0022f;
+            pvy[i] = -(0.0008f + rng.nextFloat() * 0.0022f);
+        }
+    }
+
+    // ---------------------------------------------------------------- draw
+
     @Override protected void onDraw(Canvas cv) {
         long now = System.currentTimeMillis();
         regen();
-        float w = getWidth();
-        p.setShader(new LinearGradient(0, 0, 0, getHeight(), 0xFF0B3D2E, 0xFF04150F, Shader.TileMode.CLAMP));
-        cv.drawRect(0, 0, w, getHeight(), p);
+        animating = spinning;
+        float w = getWidth(), h = getHeight();
+
+        // felt
+        p.setShader(new RadialGradient(w / 2, h * 0.36f, h * 0.55f, 0xFF1B6A45, 0xFF06281A, Shader.TileMode.CLAMP));
+        cv.drawRect(0, 0, w, h, p);
         p.setShader(null);
 
-        float wheelCy = getHeight() * 0.42f;
-        float wheelR = w * 0.40f;
+        drawHud(cv, w, h, now);
+        drawWheel(cv, w, h, now);
+        drawResult(cv, w, h, now);
+        drawTable(cv, w, h, now);
+        drawControls(cv, w, h, now);
+        drawParticles(cv, w, h, now);
 
-        // title
-        titleGlow = (titleGlow + 0.03f) % 6.28f;
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(w * 0.075f);
-        p.setFakeBoldText(true);
-        p.setColor(0xFFFFD700);
-        p.setShadowLayer(14 + 6 * (float) Math.sin(titleGlow), 0, 0, 0xFFFF9D00);
-        cv.drawText("ROULETTE ROYALE", w / 2, getHeight() * 0.09f, p);
-        p.clearShadowLayer();
-        p.setFakeBoldText(false);
+        if (animating) postInvalidateDelayed(32);
+    }
 
-        // balance / last result
-        p.setTextSize(w * 0.05f);
-        p.setColor(0xFFFFFFFF);
-        cv.drawText("COINS  " + balance, w / 2, getHeight() * 0.135f, p);
-        // level + xp bar
-        p.setTextSize(w * 0.034f);
-        p.setColor(0xFFA8CBB8);
-        cv.drawText("LV " + level, w * 0.14f, getHeight() * 0.172f, p);
-        float barL = w * 0.24f, barR = w * 0.76f, barY = getHeight() * 0.158f, barH = w * 0.022f;
-        rf.set(barL, barY, barR, barY + barH);
-        p.setColor(0xFF12503C); cv.drawRoundRect(rf, 8, 8, p);
+    private void drawHud(Canvas cv, float w, float h, long now) {
+        // level badge
+        float lvR = w * 0.055f, lvX = w * 0.10f, lvY = h * 0.042f;
+        p.setColor(0xFF0D47A1); cv.drawCircle(lvX, lvY, lvR, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(lvR * 0.18f); p.setColor(0x33FFFFFF);
+        cv.drawCircle(lvX, lvY, lvR * 0.82f, p);
         float frac = Math.min(1f, xp / (float) xpNeeded());
-        rf.set(barL, barY, barL + (barR - barL) * frac, barY + barH);
-        p.setColor(0xFFFFD700); cv.drawRoundRect(rf, 8, 8, p);
-        if (now < levelFlashUntil) {
-            p.setTextSize(w * 0.055f);
-            p.setColor(0xFFFFD700);
-            p.setFakeBoldText(true);
-            cv.drawText("LEVEL UP!", w / 2, getHeight() * 0.21f, p);
-            p.setFakeBoldText(false);
-        }
-        if (result >= 0 && !spinning) {
-            p.setColor(result == 0 ? 0xFF2E8B57 : (isRed(result) ? 0xFFFF5252 : 0xFFB0BEC5));
-            p.setFakeBoldText(true);
-            cv.drawText("LAST  " + result + (isRed(result) ? " RED" : (result == 0 ? " ZERO" : " BLACK")), w / 2, getHeight() * 0.19f, p);
-            p.setFakeBoldText(false);
-        }
+        p.setStrokeWidth(lvR * 0.16f); p.setColor(0xFFFFD700);
+        cv.drawArc(new RectF(lvX - lvR, lvY - lvR, lvX + lvR, lvY + lvR), -90, frac * 360, false, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFFFFFFFF); p.setTextSize(lvR * 0.72f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+        cv.drawText("" + level, lvX, lvY + lvR * 0.26f, p);
+        p.setFakeBoldText(false);
+        p.setTextSize(h * 0.011f); p.setColor(0x99FFFFFF);
+        cv.drawText("LEVEL", lvX, lvY + lvR * 1.5f, p);
 
+        // coin pill
+        float pillW = w * 0.34f, pillH = h * 0.034f, pillX = w * 0.52f, pillY = h * 0.026f;
+        rf.set(pillX, pillY, pillX + pillW, pillY + pillH);
+        p.setColor(0xCC000000);
+        cv.drawRoundRect(rf, pillH / 2, pillH / 2, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(0x66FFD700);
+        cv.drawRoundRect(rf, pillH / 2, pillH / 2, p);
+        p.setStyle(Paint.Style.FILL);
+        float coinR = pillH * 0.36f, coinX = pillX + pillH * 0.55f, coinY = pillY + pillH / 2f;
+        p.setColor(0xFFFFD700); cv.drawCircle(coinX, coinY, coinR, p);
+        p.setColor(0xFFB8860B); p.setTextSize(coinR * 1.2f); p.setFakeBoldText(true);
+        cv.drawText("$", coinX, coinY + coinR * 0.42f, p);
+        p.setFakeBoldText(false);
+        if (shownBalance != balance) {
+            long diff = balance - shownBalance;
+            long step = Math.max(1, Math.abs(diff) / 6);
+            shownBalance += diff > 0 ? step : -step;
+            if ((diff > 0 && shownBalance > balance) || (diff < 0 && shownBalance < balance)) shownBalance = balance;
+            animating = true;
+        }
+        p.setColor(0xFFFFFFFF); p.setTextSize(pillH * 0.52f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+        cv.drawText(String.format("%,d", shownBalance), pillX + pillW * 0.58f, pillY + pillH * 0.68f, p);
+        p.setFakeBoldText(false);
+        if (balance < 100) {
+            long nextIn = 60000 - (now - lastRegenAt) % 60000;
+            p.setTextSize(h * 0.011f); p.setColor(0x99FFFFFF);
+            cv.drawText("+5 free in " + (nextIn / 1000 + 1) + "s", pillX + pillW / 2f, pillY + pillH + h * 0.016f, p);
+            animating = true;
+        }
+    }
+
+    private void drawWheel(Canvas cv, float w, float h, long now) {
+        float wheelCy = h * 0.236f, wheelR = w * 0.30f;
         if (spinning) {
             float t = Math.min(1f, (now - spinStart) / (float) SPIN_MS);
             float ease = 1f - (1f - t) * (1f - t) * (1f - t);
             wheelAngle = startAngle + (targetAngle - startAngle) * ease;
+            // ball: fast opposite spin, eases out, radius shrinks into pocket ring at the end
+            float be = 1f - (1f - t) * (1f - t) * (1f - t) * (1f - t);
+            ballAngle = ballStart + (ballTarget - ballStart) * be;
             if (t >= 1f) post(this::finishSpin);
-            else postInvalidateDelayed(30);
         }
 
-        // wheel
+        // wooden rim
+        p.setColor(0xFF4E2A14);
+        cv.drawCircle(w / 2, wheelCy, wheelR * 1.11f, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(wheelR * 0.05f); p.setColor(0xFF6B3A1D);
+        cv.drawCircle(w / 2, wheelCy, wheelR * 1.08f, p);
+        p.setStyle(Paint.Style.FILL);
+
+        // pockets
         float seg = 360f / 37f;
         for (int i = 0; i < 37; i++) {
             int n = WHEEL[i];
@@ -207,104 +333,383 @@ public class RouletteView extends View {
             rf.set(w / 2 - wheelR, wheelCy - wheelR, w / 2 + wheelR, wheelCy + wheelR);
             cv.drawArc(rf, wheelAngle + i * seg - 90, seg, true, p);
         }
+        // gold trims + turret
         p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(6);
-        p.setColor(0xFFFFD700);
+        p.setStrokeWidth(wheelR * 0.03f); p.setColor(0xFFFFD700);
         cv.drawCircle(w / 2, wheelCy, wheelR, p);
-        cv.drawCircle(w / 2, wheelCy, wheelR * 0.62f, p);
+        cv.drawCircle(w / 2, wheelCy, wheelR * 0.66f, p);
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF0B3D2E);
-        cv.drawCircle(w / 2, wheelCy, wheelR * 0.60f, p);
+        p.setColor(0xFF123D2B);
+        cv.drawCircle(w / 2, wheelCy, wheelR * 0.63f, p);
+        p.setShader(new RadialGradient(w / 2, wheelCy, wheelR * 0.3f, 0xFF8A8A8A, 0xFF3A3A3A, Shader.TileMode.CLAMP));
+        cv.drawCircle(w / 2, wheelCy, wheelR * 0.16f, p);
+        p.setShader(null);
+        // cross turret
+        p.setColor(0xFF9E9E9E);
+        cv.drawRect(w / 2 - wheelR * 0.03f, wheelCy - wheelR * 0.30f, w / 2 + wheelR * 0.03f, wheelCy + wheelR * 0.30f, p);
+        cv.drawRect(w / 2 - wheelR * 0.30f, wheelCy - wheelR * 0.03f, w / 2 + wheelR * 0.30f, wheelCy + wheelR * 0.03f, p);
 
         // pocket numbers
-        p.setTextSize(wheelR * 0.11f);
+        p.setTextSize(wheelR * 0.115f);
+        p.setTextAlign(Paint.Align.CENTER);
         for (int i = 0; i < 37; i++) {
             double a = Math.toRadians(wheelAngle + (i + 0.5f) * seg - 90);
-            float tx = w / 2 + (float) Math.cos(a) * wheelR * 0.82f;
-            float ty = wheelCy + (float) Math.sin(a) * wheelR * 0.82f - (p.descent() + p.ascent()) / 2;
+            float tx = w / 2 + (float) Math.cos(a) * wheelR * 0.84f;
+            float ty = wheelCy + (float) Math.sin(a) * wheelR * 0.84f - (p.descent() + p.ascent()) / 2;
             p.setColor(0xFFFFFFFF);
             cv.drawText(String.valueOf(WHEEL[i]), tx, ty, p);
         }
 
-        // ball at top when idle after spin
-        if (!spinning && result >= 0) {
-            p.setColor(0xFFFAFAFA);
-            cv.drawCircle(w / 2, wheelCy - wheelR * 0.82f, wheelR * 0.05f, p);
+        // ball
+        if (spinning || result >= 0) {
+            float t = spinning ? Math.min(1f, (now - spinStart) / (float) SPIN_MS) : 1f;
+            float br = wheelR * (t < 0.7f ? 1.02f : (1.02f - 0.18f * (t - 0.7f) / 0.3f));
+            // small bounce as it drops
+            if (t > 0.85f && t < 1f) br += (float) Math.sin((t - 0.85f) / 0.15f * Math.PI * 3) * wheelR * 0.02f;
+            double a = Math.toRadians(spinning ? ballAngle : -90);
+            float bx = w / 2 + (float) Math.cos(a) * br;
+            float by = wheelCy + (float) Math.sin(a) * br;
+            p.setColor(0x55000000);
+            cv.drawCircle(bx + 2, by + 3, wheelR * 0.055f, p);
+            p.setShader(new RadialGradient(bx - wheelR * 0.02f, by - wheelR * 0.02f, wheelR * 0.06f, 0xFFFFFFFF, 0xFFB0BEC5, Shader.TileMode.CLAMP));
+            cv.drawCircle(bx, by, wheelR * 0.055f, p);
+            p.setShader(null);
         }
-
-        // win flash
-        if (lastWin > 0 && now < winFlashUntil) {
-            p.setColor(0xFF7CFC00);
-            p.setTextSize(w * 0.065f);
-            p.setFakeBoldText(true);
-            cv.drawText("WIN +" + lastWin, w / 2, wheelCy + wheelR * 0.35f, p);
-            p.setFakeBoldText(false);
-            postInvalidateDelayed(150);
-        }
-
-        // controls
-        float ctrlY = wheelCy + wheelR + 22;
-        float btnH = getHeight() * 0.065f;
-        p.setTextSize(w * 0.042f);
-
-        // bet amount
-        rf.set(w * 0.04f, ctrlY, w * 0.30f, ctrlY + btnH);
-        p.setColor(0xFF14503C); cv.drawRoundRect(rf, 14, 14, p);
-        p.setColor(0xFFFFD700); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3); cv.drawRoundRect(rf, 14, 14, p); p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFFFFFFF);
-        cv.drawText("BET " + BETS[betIdx], w * 0.17f, ctrlY + btnH * 0.65f, p);
-
-        // bet type
-        rf.set(w * 0.36f, ctrlY, w * 0.66f, ctrlY + btnH);
-        p.setColor(0xFF14503C); cv.drawRoundRect(rf, 14, 14, p);
-        p.setColor(0xFFFFD700); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3); cv.drawRoundRect(rf, 14, 14, p); p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFFFFFFF);
-        String typeLabel = TYPES[typeIdx].equals("NUM") ? ("NUM " + straightNum) : TYPES[typeIdx];
-        cv.drawText(typeLabel, w * 0.51f, ctrlY + btnH * 0.65f, p);
-
-        // spin button
-        rf.set(w * 0.72f, ctrlY, w * 0.96f, ctrlY + btnH);
-        boolean canSpin = !spinning && balance >= BETS[betIdx];
-        p.setColor(spinning ? 0xFF555555 : (canSpin ? 0xFFC62828 : 0xFF6E3A3A));
-        cv.drawRoundRect(rf, 14, 14, p);
-        p.setColor(0xFFFFFFFF);
-        p.setTextSize(w * 0.055f);
-        p.setFakeBoldText(true);
-        cv.drawText(spinning ? "..." : "SPIN", w * 0.84f, ctrlY + btnH * 0.66f, p);
-        p.setFakeBoldText(false);
-
-        // odds hint
-        p.setTextSize(w * 0.032f);
-        p.setColor(0xFFC8D6CF);
-        cv.drawText(TYPES[typeIdx].equals("NUM") ? "Straight number pays 35:1" : "Even chance pays 1:1 - tap to change bet", w / 2, ctrlY + btnH + w * 0.06f, p);
-
-        // disclaimer
-        p.setTextSize(w * 0.028f);
-        p.setColor(0xFFE0C9A6);
-        cv.drawText("Free play only. Virtual coins - no real money, no prizes.", w / 2, getHeight() - w * 0.03f, p);
     }
 
-    @Override public boolean onTouchEvent(MotionEvent e) {
-        if (e.getAction() != MotionEvent.ACTION_DOWN) return true;
-        float w = getWidth();
-        float ctrlY = getHeight() * 0.42f + w * 0.40f + 22;
-        float btnH = getHeight() * 0.065f;
-        float x = e.getX(), y = e.getY();
-        if (y >= ctrlY && y <= ctrlY + btnH && !spinning) {
-            if (x >= w * 0.04f && x <= w * 0.30f) {
-                betIdx = (betIdx + 1) % BETS.length; persist(); invalidate();
-            } else if (x >= w * 0.36f && x <= w * 0.66f) {
-                if (TYPES[typeIdx].equals("NUM")) {
-                    straightNum++;
-                    if (straightNum > 36) { typeIdx = 0; straightNum = 7; }
-                } else {
-                    typeIdx++;
-                }
-                persist(); invalidate();
-            } else if (x >= w * 0.72f && x <= w * 0.96f) {
-                spin();
-            }
+    private void drawResult(Canvas cv, float w, float h, long now) {
+        if (result >= 0 && !spinning) {
+            String label = result + (result == 0 ? "" : (isRed(result) ? " RED" : " BLACK"));
+            int col = result == 0 ? 0xFF2E8B57 : (isRed(result) ? 0xFFFF5252 : 0xFFB0BEC5);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(h * 0.016f); p.setColor(0x99FFFFFF);
+            cv.drawText("LAST RESULT", w / 2, h * 0.412f, p);
+            p.setTextSize(h * 0.022f); p.setFakeBoldText(true); p.setColor(col);
+            cv.drawText(label, w / 2, h * 0.432f, p);
+            p.setFakeBoldText(false);
+        } else if (!spinning) {
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(h * 0.015f); p.setColor(0x99FFFFFF);
+            cv.drawText("PLACE YOUR BETS ON THE TABLE", w / 2, h * 0.418f, p);
         }
+        // win banner
+        if (lastWin > 0 && now < winFlashUntil && !spinning) {
+            float t = 1f - (winFlashUntil - now) / 2200f;
+            float scale = t < 0.2f ? 0.5f + 2.5f * t : 1f;
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(h * 0.030f * scale);
+            p.setFakeBoldText(true);
+            p.setColor(0xFF7CFC00);
+            p.setShadowLayer(12, 0, 0, 0xAA7CFC00);
+            cv.drawText("WIN +" + String.format("%,d", lastWin), w / 2, h * 0.45f, p);
+            p.clearShadowLayer();
+            p.setFakeBoldText(false);
+            animating = true;
+        }
+    }
+
+    // table geometry
+    private float tblX(float w) { return w * 0.04f; }
+    private float tblW(float w) { return w * 0.78f; }       // numbers grid width (12 cols)
+    private float colW(float w) { return tblW(w) / 12f; }
+    private float row0Y(float h) { return h * 0.470f; }     // first number row top
+    private float rowH(float h) { return h * 0.038f; }
+
+    private void drawTable(Canvas cv, float w, float h, long now) {
+        float x0 = tblX(w), cw = colW(w), rh = rowH(h), y0 = row0Y(h);
+
+        // zero: full-width bar above the grid
+        rf.set(x0, y0 - rh * 1.08f, x0 + tblW(w) + w * 0.14f, y0 - rh * 0.08f);
+        p.setColor(spotBg("N0", now));
+        cv.drawRoundRect(rf, 8, 8, p);
+        cellStroke(cv, "N0");
+        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(rh * 0.55f);
+        p.setColor(0xFFFFFFFF); p.setFakeBoldText(true);
+        cv.drawText("0", rf.centerX(), rf.centerY() + rh * 0.2f, p);
+        p.setFakeBoldText(false);
+        drawStakedChips(cv, "N0", rf.centerX(), rf.centerY(), rh);
+
+        // numbers 1-36: top row is 3,6,...,36 ; bottom row 1,4,...,34
+        for (int n = 1; n <= 36; n++) {
+            int col = (n - 1) / 3;
+            int row = 2 - (n - 1) % 3;         // 0 top .. 2 bottom
+            float cx0 = x0 + col * cw, cy0 = y0 + row * rh;
+            rf.set(cx0 + 1, cy0 + 1, cx0 + cw - 1, cy0 + rh - 1);
+            p.setColor(spotBg("N" + n, now));
+            cv.drawRect(rf, p);
+            cellStroke(cv, "N" + n);
+            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.42f); p.setTextAlign(Paint.Align.CENTER);
+            cv.drawText(String.valueOf(n), rf.centerX(), rf.centerY() + rh * 0.15f, p);
+            drawStakedChips(cv, "N" + n, rf.centerX(), rf.centerY(), rh);
+        }
+
+        // column bets 2:1 (right strip, one per row)
+        for (int r = 0; r < 3; r++) {
+            String spot = "C" + (3 - r);        // top row numbers %3==0 -> C3, bottom %3==1 -> C1
+            rf.set(x0 + tblW(w) + 2, y0 + r * rh + 1, x0 + tblW(w) + w * 0.14f - 2, y0 + (r + 1) * rh - 1);
+            p.setColor(spotBg(spot, now));
+            cv.drawRect(rf, p);
+            cellStroke(cv, spot);
+            p.setColor(0xFFFFD700); p.setTextSize(rh * 0.34f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            cv.drawText("2:1", rf.centerX(), rf.centerY() + rh * 0.12f, p);
+            p.setFakeBoldText(false);
+            drawStakedChips(cv, spot, rf.centerX(), rf.centerY(), rh);
+        }
+
+        // dozens row
+        String[] dLabels = {"1st 12", "2nd 12", "3rd 12"};
+        float dzY = y0 + 3 * rh + 2;
+        for (int d = 1; d <= 3; d++) {
+            String spot = "D" + d;
+            rf.set(x0 + (d - 1) * cw * 4 + 1, dzY, x0 + d * cw * 4 - 1, dzY + rh * 0.92f);
+            p.setColor(spotBg(spot, now));
+            cv.drawRoundRect(rf, 6, 6, p);
+            cellStroke(cv, spot);
+            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.38f); p.setTextAlign(Paint.Align.CENTER);
+            cv.drawText(dLabels[d - 1], rf.centerX(), rf.centerY() + rh * 0.13f, p);
+            drawStakedChips(cv, spot, rf.centerX(), rf.centerY(), rh);
+        }
+
+        // even chances row
+        String[] spots = {"LOW", "EVEN", "RED", "BLACK", "ODD", "HIGH"};
+        String[] labels = {"1-18", "EVEN", "RED", "BLACK", "ODD", "19-36"};
+        float ecY = dzY + rh * 0.98f;
+        float ecW = tblW(w) / 6f;
+        for (int i = 0; i < 6; i++) {
+            rf.set(x0 + i * ecW + 1, ecY, x0 + (i + 1) * ecW - 1, ecY + rh * 0.98f);
+            p.setColor(spotBg(spots[i], now));
+            cv.drawRoundRect(rf, 6, 6, p);
+            cellStroke(cv, spots[i]);
+            p.setTextAlign(Paint.Align.CENTER);
+            if (spots[i].equals("RED") || spots[i].equals("BLACK")) {
+                int col = spots[i].equals("RED") ? 0xFFFF5252 : 0xFF263238;
+                p.setColor(col);
+                float dx = rf.centerX(), dy = rf.centerY() - rh * 0.10f, dr = rh * 0.17f;
+                Path dm = new Path();
+                dm.moveTo(dx, dy - dr); dm.lineTo(dx + dr, dy); dm.lineTo(dx, dy + dr); dm.lineTo(dx - dr, dy);
+                dm.close();
+                if (spots[i].equals("BLACK")) { p.setStyle(Paint.Style.FILL); cv.drawPath(dm, p); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(0xFFB0BEC5); cv.drawPath(dm, p); p.setStyle(Paint.Style.FILL); }
+                else cv.drawPath(dm, p);
+            } else {
+                p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.34f);
+                cv.drawText(labels[i], rf.centerX(), rf.centerY() - rh * 0.02f, p);
+            }
+            p.setColor(0x99FFFFFF); p.setTextSize(rh * 0.24f);
+            cv.drawText("1:1", rf.centerX(), rf.centerY() + rh * 0.30f, p);
+            drawStakedChips(cv, spots[i], rf.centerX(), rf.centerY(), rh);
+        }
+    }
+
+    private int spotBg(String spot, long now) {
+        if (winSpots.contains(spot) && now < winFlashUntil && !spinning) {
+            return ((now / 200) % 2 == 0) ? 0xFFFFD54F : 0xFFFFF176;   // flashing gold for winners
+        }
+        if (spot.equals("N0")) return 0xCC0E7C46;
+        if (spot.startsWith("N")) {
+            int n = Integer.parseInt(spot.substring(1));
+            return isRed(n) ? 0xCCB71C1C : 0xCC212121;
+        }
+        if (spot.equals("RED")) return 0xCCB71C1C;
+        if (spot.equals("BLACK")) return 0xCC212121;
+        return 0xCC14503C;
+    }
+
+    private void cellStroke(Canvas cv, String spot) {
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(1.5f); p.setColor(0x55FFFFFF);
+        cv.drawRect(rf, p);
+        p.setStyle(Paint.Style.FILL);
+        if (bets.containsKey(spot)) {
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3); p.setColor(0xFFFFD700);
+            cv.drawRect(rf, p);
+            p.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private void drawStakedChips(Canvas cv, String spot, float cx, float cy, float cellH) {
+        Integer amt = bets.get(spot);
+        if (amt == null || amt <= 0) return;
+        float r = cellH * 0.26f;
+        // decompose amount into chip denominations, show up to 3 stacked + total
+        List<Integer> stack = new ArrayList<>();
+        int rem = amt;
+        for (int c = BETS.length - 1; c >= 0 && stack.size() < 3; c--)
+            while (rem >= BETS[c] && stack.size() < 3) { rem -= BETS[c]; stack.add(c); }
+        for (int i = 0; i < stack.size(); i++)
+            drawChip(cv, cx, cy + cellH * 0.06f - i * r * 0.45f, r, CHIP_COLORS[stack.get(i)], "", false);
+        p.setColor(0xFFFFFFFF); p.setTextSize(r * 0.9f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+        p.setShadowLayer(3, 0, 1, 0xFF000000);
+        cv.drawText("" + amt, cx, cy + cellH * 0.40f, p);
+        p.clearShadowLayer();
+        p.setFakeBoldText(false);
+    }
+
+    private void drawControls(Canvas cv, float w, float h, long now) {
+        // chip selector
+        float chipR = w * 0.062f, chipGap = w * 0.045f;
+        float rowW = BETS.length * chipR * 2 + (BETS.length - 1) * chipGap;
+        float cx0 = w / 2f - rowW / 2f + chipR;
+        float cy = h * 0.72f;
+        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(h * 0.012f); p.setColor(0x99FFFFFF);
+        cv.drawText(totalBet() > 0 ? "TOTAL BET " + totalBet() : "TAP A CHIP, THEN TAP THE TABLE", w / 2, cy - chipR * 1.45f, p);
+        for (int i = 0; i < BETS.length; i++) {
+            boolean sel = i == betIdx;
+            drawChip(cv, cx0 + i * (chipR * 2 + chipGap), cy + (sel ? -h * 0.006f : 0), chipR, CHIP_COLORS[i], "" + BETS[i], sel);
+        }
+
+        // buttons row: CLEAR | UNDO | SPIN
+        float bh = h * 0.052f, by = h * 0.762f;
+        boolean idle = !spinning;
+        drawPillButton(cv, w * 0.05f, by, w * 0.22f, bh, "CLEAR", 0xFF78909C, 0xFF37474F, idle && !bets.isEmpty(), pressedBtn == 1, 0);
+        drawPillButton(cv, w * 0.31f, by, w * 0.22f, bh, "UNDO", 0xFF78909C, 0xFF37474F, idle && !placeOrder.isEmpty(), pressedBtn == 2, 0);
+        boolean canSpin = idle && totalBet() > 0;
+        float pulse = (canSpin && now - lastTouchAt > 3000) ? (float) (0.5 + 0.5 * Math.sin(now / 450.0)) : 0f;
+        if (pulse > 0) animating = true;
+        drawPillButton(cv, w * 0.57f, by, w * 0.38f, bh, spinning ? "..." : "SPIN  \u25B6", 0xFFE53935, 0xFF8E0000, canSpin, pressedBtn == 0, pulse);
+
+        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(h * 0.0105f); p.setColor(0x99FFFFFF);
+        cv.drawText("Straight 35:1  -  Dozen/Column 2:1  -  Even chances 1:1", w / 2, by + bh + h * 0.02f, p);
+        cv.drawText("Free play only. Virtual coins - no real money, no prizes.", w / 2, by + bh + h * 0.04f, p);
+    }
+
+    private void drawParticles(Canvas cv, float w, float h, long now) {
+        if (!particlesOn) return;
+        float t = (now - particlesAt) / 1000f;
+        if (t > 1.6f) { particlesOn = false; return; }
+        animating = true;
+        for (int i = 0; i < 18; i++) {
+            float x = (px[i] + pvx[i] * t * 60) * w;
+            float y = (py[i] + pvy[i] * t * 60 + 0.0011f * t * t * 3600) * h;
+            if (y > h) continue;
+            drawChip(cv, x, y, w * 0.016f, CHIP_COLORS[i % 4], "", false);
+        }
+    }
+
+    private void drawChip(Canvas cv, float cx, float cy, float r, int color, String label, boolean selected) {
+        p.setStyle(Paint.Style.FILL); p.setColor(0x66000000);
+        cv.drawCircle(cx + 2, cy + 4, r, p);
+        p.setColor(color);
+        cv.drawCircle(cx, cy, r, p);
+        p.setColor(0xFFF5F5F5);
+        for (int i = 0; i < 6; i++) {
+            double a = Math.PI / 3 * i + Math.PI / 6;
+            float sx = cx + (float) Math.cos(a) * r * 0.86f;
+            float sy = cy + (float) Math.sin(a) * r * 0.86f;
+            float ex = cx + (float) Math.cos(a) * r * 1.0f;
+            float ey = cy + (float) Math.sin(a) * r * 1.0f;
+            p.setStrokeWidth(r * 0.16f);
+            cv.drawLine(sx, sy, ex, ey, p);
+        }
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(r * 0.06f); p.setColor(0xCCFFFFFF);
+        cv.drawCircle(cx, cy, r * 0.66f, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFFF5F5F5); cv.drawCircle(cx, cy, r * 0.55f, p);
+        if (!label.isEmpty()) {
+            p.setColor(0xFF202020); p.setTextSize(r * 0.52f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            cv.drawText(label, cx, cy + r * 0.19f, p);
+            p.setFakeBoldText(false);
+        }
+        if (selected) {
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(r * 0.09f); p.setColor(0xFFFFD700);
+            cv.drawCircle(cx, cy, r * 1.12f, p);
+            p.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private void drawPillButton(Canvas cv, float x, float y, float w, float h, String label,
+                                int bgTop, int bgBottom, boolean enabled, boolean pressed, float pulse) {
+        float sc = pressed ? 0.94f : 1f;
+        float cx = x + w / 2f, cy = y + h / 2f;
+        float dw = w * sc, dh = h * sc;
+        rf.set(cx - dw / 2, cy - dh / 2, cx + dw / 2, cy + dh / 2);
+        if (pulse > 0f && enabled) {
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(h * 0.06f);
+            p.setColor(0x44FFD700);
+            float grow = pulse * h * 0.22f;
+            RectF glow = new RectF(rf.left - grow, rf.top - grow, rf.right + grow, rf.bottom + grow);
+            cv.drawRoundRect(glow, dh * 0.5f + grow, dh * 0.5f + grow, p);
+            p.setStyle(Paint.Style.FILL);
+        }
+        if (enabled) {
+            p.setShader(new LinearGradient(0, rf.top, 0, rf.bottom, bgTop, bgBottom, Shader.TileMode.CLAMP));
+        } else {
+            p.setShader(null); p.setColor(0xFF37474F);
+        }
+        cv.drawRoundRect(rf, dh * 0.5f, dh * 0.5f, p);
+        p.setShader(null);
+        if (enabled) {
+            p.setColor(0x33FFFFFF);
+            rf.set(cx - dw / 2 + 6, cy - dh / 2 + 4, cx + dw / 2 - 6, cy - dh * 0.18f);
+            cv.drawRoundRect(rf, dh * 0.4f, dh * 0.4f, p);
+        }
+        p.setColor(enabled ? 0xFFFFFFFF : 0xFF90A4AE);
+        p.setTextSize(dh * 0.40f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+        p.setShadowLayer(3, 0, 2, 0x66000000);
+        cv.drawText(label, cx, cy + dh * 0.15f, p);
+        p.clearShadowLayer();
+        p.setFakeBoldText(false);
+    }
+
+    // ---------------------------------------------------------------- touch
+
+    @Override public boolean onTouchEvent(MotionEvent e) {
+        if (e.getAction() == MotionEvent.ACTION_DOWN) { lastTouchAt = System.currentTimeMillis(); return true; }
+        if (e.getAction() != MotionEvent.ACTION_UP) return true;
+        float w = getWidth(), h = getHeight();
+        float x = e.getX(), y = e.getY();
+        pressedBtn = -1;
+
+        // buttons
+        float bh = h * 0.052f, by = h * 0.762f;
+        if (y >= by && y <= by + bh && !spinning) {
+            if (x >= w * 0.05f && x <= w * 0.27f) { clearBets(); return true; }
+            if (x >= w * 0.31f && x <= w * 0.53f) { undoBet(); return true; }
+            if (x >= w * 0.57f && x <= w * 0.95f) { spin(); return true; }
+        }
+        // chip selector
+        float chipR = w * 0.062f, chipGap = w * 0.045f;
+        float rowW = BETS.length * chipR * 2 + (BETS.length - 1) * chipGap;
+        float cx0 = w / 2f - rowW / 2f + chipR;
+        float cy = h * 0.72f;
+        for (int i = 0; i < BETS.length; i++) {
+            float cx = cx0 + i * (chipR * 2 + chipGap);
+            if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; persist(); invalidate(); return true; }
+        }
+        if (spinning) return true;
+
+        // betting table
+        String spot = spotAt(x, y, w, h);
+        if (spot != null) { placeBet(spot); return true; }
         return true;
+    }
+
+    private String spotAt(float x, float y, float w, float h) {
+        float x0 = tblX(w), cw = colW(w), rh = rowH(h), y0 = row0Y(h);
+        // zero bar
+        if (y >= y0 - rh * 1.08f && y <= y0 - rh * 0.08f && x >= x0 && x <= x0 + tblW(w) + w * 0.14f) return "N0";
+        // numbers + columns
+        if (y >= y0 && y <= y0 + 3 * rh) {
+            int row = (int) ((y - y0) / rh);
+            if (x >= x0 + tblW(w) && x <= x0 + tblW(w) + w * 0.14f) return "C" + (3 - row);
+            if (x >= x0 && x < x0 + tblW(w)) {
+                int col = (int) ((x - x0) / cw);
+                if (col >= 0 && col < 12) return "N" + (col * 3 + (3 - row));
+            }
+            return null;
+        }
+        // dozens
+        float dzY = y0 + 3 * rh + 2;
+        if (y >= dzY && y <= dzY + rh * 0.92f && x >= x0 && x <= x0 + tblW(w)) {
+            int d = (int) ((x - x0) / (cw * 4)) + 1;
+            if (d >= 1 && d <= 3) return "D" + d;
+            return null;
+        }
+        // even chances
+        float ecY = dzY + rh * 0.98f;
+        String[] spots = {"LOW", "EVEN", "RED", "BLACK", "ODD", "HIGH"};
+        if (y >= ecY && y <= ecY + rh * 0.98f && x >= x0 && x <= x0 + tblW(w)) {
+            int i = (int) ((x - x0) / (tblW(w) / 6f));
+            if (i >= 0 && i < 6) return spots[i];
+        }
+        return null;
     }
 }

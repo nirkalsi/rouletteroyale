@@ -19,7 +19,7 @@ import org.robolectric.shadows.ShadowAlertDialog;
 
 /** Pixel-render smoke: game view + full screen + reward/daily/missions/shop overlays. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 34)
+@Config(sdk = 34, qualifiers = "xxhdpi")
 public class RenderSmokeTest {
 
     private void renderView(View v, int w, int h, String path) throws Exception {
@@ -44,10 +44,20 @@ public class RenderSmokeTest {
         m.invoke(o);
     }
 
+    private void callPrivate(Object o, String name, Class<?> type, Object arg) throws Exception {
+        Method m = o.getClass().getDeclaredMethod(name, type);
+        m.setAccessible(true);
+        m.invoke(o, arg);
+    }
+
     private void renderLatestDialog(String tag) throws Exception {
         AlertDialog d = ShadowAlertDialog.getLatestAlertDialog();
         assertNotNull("no dialog for " + tag, d);
-        renderView(d.getWindow().getDecorView(), 1000, 1700, "/tmp/renders/" + tag + ".png");
+        android.view.View content = d.getWindow().getDecorView();
+        content.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.AT_MOST),
+                        View.MeasureSpec.makeMeasureSpec(1700, View.MeasureSpec.AT_MOST));
+        renderView(content, Math.max(content.getMeasuredWidth(), 400),
+                   Math.max(content.getMeasuredHeight(), 200) + 80, "/tmp/renders/" + tag + ".png");
     }
 
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -94,4 +104,17 @@ public class RenderSmokeTest {
         renderLatestDialog("rouletteroyale-outofcoins");
     }
 
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void renderPlacedBets() throws Exception {
+        RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
+        v.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                  View.MeasureSpec.makeMeasureSpec(2243, View.MeasureSpec.EXACTLY));
+        // place 10 (default chip) on straight 7, RED and 2nd dozen: balance 500 -> 470
+        callPrivate(v, "placeBet", String.class, "N7");
+        callPrivate(v, "placeBet", String.class, "RED");
+        callPrivate(v, "placeBet", String.class, "D2");
+        org.junit.Assert.assertEquals("three 10-chip placements must debit 30", 470L, v.getBalance());
+        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-bets.png");
+    }
 }
