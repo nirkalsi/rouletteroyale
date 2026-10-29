@@ -427,7 +427,7 @@ public class RouletteView extends View {
         p.setColor(0xFFFFFFFF); p.setFakeBoldText(true);
         cv.drawText("0", rf.centerX(), rf.centerY() + rh * 0.2f, p);
         p.setFakeBoldText(false);
-        drawStakedChips(cv, "N0", rf.centerX(), rf.centerY(), rh);
+        drawStakedChips(cv, "N0", rf.left, rf.top, rf.width(), rh);
 
         // numbers 1-36: top row is 3,6,...,36 ; bottom row 1,4,...,34
         for (int n = 1; n <= 36; n++) {
@@ -440,7 +440,7 @@ public class RouletteView extends View {
             cellStroke(cv, "N" + n);
             p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.42f); p.setTextAlign(Paint.Align.CENTER);
             cv.drawText(String.valueOf(n), rf.centerX(), rf.centerY() + rh * 0.15f, p);
-            drawStakedChips(cv, "N" + n, rf.centerX(), rf.centerY(), rh);
+            drawStakedChips(cv, "N" + n, rf.left, rf.top, cw, rh);
         }
 
         // column bets 2:1 (right strip, one per row)
@@ -453,7 +453,7 @@ public class RouletteView extends View {
             p.setColor(0xFFFFD700); p.setTextSize(rh * 0.34f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
             cv.drawText("2:1", rf.centerX(), rf.centerY() + rh * 0.12f, p);
             p.setFakeBoldText(false);
-            drawStakedChips(cv, spot, rf.centerX(), rf.centerY(), rh);
+            drawStakedChips(cv, spot, rf.left, rf.top, rf.width(), rh);
         }
 
         // dozens row
@@ -467,7 +467,7 @@ public class RouletteView extends View {
             cellStroke(cv, spot);
             p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.38f); p.setTextAlign(Paint.Align.CENTER);
             cv.drawText(dLabels[d - 1], rf.centerX(), rf.centerY() + rh * 0.13f, p);
-            drawStakedChips(cv, spot, rf.centerX(), rf.centerY(), rh);
+            drawStakedChips(cv, spot, rf.left, rf.top, rf.width(), rh);
         }
 
         // even chances row
@@ -496,7 +496,7 @@ public class RouletteView extends View {
             }
             p.setColor(0x99FFFFFF); p.setTextSize(rh * 0.24f);
             cv.drawText("1:1", rf.centerX(), rf.centerY() + rh * 0.30f, p);
-            drawStakedChips(cv, spots[i], rf.centerX(), rf.centerY(), rh);
+            drawStakedChips(cv, spots[i], rf.left, rf.top, rf.width(), rh);
         }
     }
 
@@ -525,22 +525,28 @@ public class RouletteView extends View {
         }
     }
 
-    private void drawStakedChips(Canvas cv, String spot, float cx, float cy, float cellH) {
+    private void drawStakedChips(Canvas cv, String spot, float left, float top, float cw, float cellH) {
         Integer amt = bets.get(spot);
         if (amt == null || amt <= 0) return;
-        float r = cellH * 0.26f;
-        // decompose amount into chip denominations, show up to 3 stacked + total
+        float r = cellH * 0.24f;
+        float cx, cy;
+        if (spot.startsWith("N") && !spot.equals("N0")) {
+            cx = left + cw * 0.5f; cy = top + cellH * 0.28f;      // above the number
+        } else if (spot.equals("RED") || spot.equals("BLACK") || spot.equals("EVEN") || spot.equals("ODD")
+                || spot.equals("LOW") || spot.equals("HIGH")) {
+            cx = left + cw * 0.74f; cy = top + cellH * 0.50f;     // right of the label
+        } else {
+            cx = left + cw * 0.5f; cy = top + cellH * 0.74f;      // below dozen/column/zero labels
+        }
         List<Integer> stack = new ArrayList<>();
         int rem = amt;
         for (int c = BETS.length - 1; c >= 0 && stack.size() < 3; c--)
             while (rem >= BETS[c] && stack.size() < 3) { rem -= BETS[c]; stack.add(c); }
-        for (int i = 0; i < stack.size(); i++)
-            drawChip(cv, cx, cy - cellH * 0.22f - i * r * 0.45f, r, CHIP_COLORS[stack.get(i)], "", false);
-        p.setColor(0xFFFFFFFF); p.setTextSize(r * 0.9f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
-        p.setShadowLayer(3, 0, 1, 0xFF000000);
-        cv.drawText("" + amt, cx, cy + cellH * 0.40f, p);
-        p.clearShadowLayer();
-        p.setFakeBoldText(false);
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            boolean topChip = i == 0;
+            float yy = cy - (stack.size() - 1 - i) * r * 0.40f;
+            drawChip(cv, cx, yy, r, CHIP_COLORS[stack.get(i)], topChip ? String.valueOf(amt) : "", false);
+        }
     }
 
     private void drawControls(Canvas cv, float w, float h, long now) {
