@@ -117,6 +117,8 @@ public class RouletteView extends View {
         balance -= chip;
         bets.put(spot, bets.containsKey(spot) ? bets.get(spot) + chip : chip);
         placeOrder.add(spot);
+        GameSounds.play(GameSounds.CHIP);
+        performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
         persist();
         invalidate();
     }
@@ -176,6 +178,8 @@ public class RouletteView extends View {
         result = rng.nextInt(37);
         spinning = true;
         spinStart = System.currentTimeMillis();
+        GameSounds.play(GameSounds.SPIN);
+        performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
         startAngle = wheelAngle;
         int pocket = 0;
         for (int i = 0; i < 37; i++) if (WHEEL[i] == result) pocket = i;
@@ -210,6 +214,9 @@ public class RouletteView extends View {
         if (win > 0) {
             winFlashUntil = System.currentTimeMillis() + 2200;
             startParticles();
+            GameSounds.play(win >= 10 * tb ? GameSounds.BIG_WIN : GameSounds.WIN);
+        } else {
+            GameSounds.play(GameSounds.LOSE);
         }
         while (xp >= xpNeeded()) {
             xp -= xpNeeded();
@@ -678,7 +685,7 @@ public class RouletteView extends View {
         float cy = h * 0.72f;
         for (int i = 0; i < BETS.length; i++) {
             float cx = cx0 + i * (chipR * 2 + chipGap);
-            if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; persist(); invalidate(); return true; }
+            if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; GameSounds.play(GameSounds.CHIP); persist(); invalidate(); return true; }
         }
         if (spinning) return true;
 
