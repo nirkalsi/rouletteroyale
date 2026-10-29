@@ -65,7 +65,8 @@ public class RouletteView extends View {
 
     private boolean animating = false;
     private long lastTouchAt = 0;
-    private int pressedBtn = -1;               // 0 spin, 1 clear, 2 undo
+    private int pressedBtn = -1;
+    private long betBumpAt = 0;               // 0 spin, 1 clear, 2 undo
     private long pressedAt = 0;
 
     // chip particles for win celebration
@@ -622,6 +623,16 @@ public class RouletteView extends View {
             boolean sel = i == betIdx;
             drawChip(cv, cx0 + i * (chipR * 2 + chipGap), cy + (sel ? -h * 0.006f : 0), chipR, CHIP_COLORS[i], "" + BETS[i], sel);
         }
+        // MAX BET shortcut
+        float mx = w / 2f + rowW / 2f + chipGap * 0.6f + chipR * 0.8f;
+        float bump = now - betBumpAt < 250 ? 1f + 0.25f * (1f - (now - betBumpAt) / 250f) : 1f;
+        if (now - betBumpAt < 250) postInvalidateDelayed(28);
+        p.setColor(0xFFFFD54F);
+        cv.drawCircle(mx, cy, chipR * 0.8f * bump, p);
+        p.setColor(0xFF6D4C00); p.setTextSize(chipR * 0.4f * bump); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+        cv.drawText("MAX", mx, cy + chipR * 0.14f * bump, p);
+        p.setFakeBoldText(false);
+
 
         // buttons row: CLEAR | UNDO | SPIN
         float bh = h * 0.052f, by = h * 0.762f;
@@ -754,6 +765,8 @@ public class RouletteView extends View {
         float rowW = BETS.length * chipR * 2 + (BETS.length - 1) * chipGap;
         float cx0 = w / 2f - rowW / 2f + chipR;
         float cy = h * 0.72f;
+        float mx = w / 2f + rowW / 2f + chipGap * 0.6f + chipR * 0.8f;
+        if (Math.hypot(x - mx, y - cy) <= chipR * 1.2f) { maxBet(); return true; }
         for (int i = 0; i < BETS.length; i++) {
             float cx = cx0 + i * (chipR * 2 + chipGap);
             if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; GameSounds.play(getContext(), GameSounds.CHIP); persist(); invalidate(); return true; }
@@ -764,6 +777,22 @@ public class RouletteView extends View {
         String spot = spotAt(x, y, w, h);
         if (spot != null) { placeBet(spot); return true; }
         return true;
+    }
+
+
+    private void maxBet() {
+        for (int i = BETS.length - 1; i >= 0; i--) {
+            if (balance >= BETS[i]) {
+                if (i != betIdx) {
+                    betIdx = i;
+                    GameSounds.play(getContext(), GameSounds.CHIP);
+                    betBumpAt = System.currentTimeMillis();
+                }
+                invalidate();
+                persist();
+                return;
+            }
+        }
     }
 
     private String spotAt(float x, float y, float w, float h) {
