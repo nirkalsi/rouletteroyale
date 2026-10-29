@@ -124,7 +124,6 @@ public class RenderSmokeTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void levelUpOverlay() throws Exception {
         RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
-        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-levelup-plain.png");
         setField(v, "levelUpPending", 3);
         setField(v, "levelUpReward", 450L);
         setField(v, "levelUpShowing", true);
