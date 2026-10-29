@@ -117,7 +117,7 @@ public class RouletteView extends View {
         balance -= chip;
         bets.put(spot, bets.containsKey(spot) ? bets.get(spot) + chip : chip);
         placeOrder.add(spot);
-        GameSounds.play(GameSounds.CHIP);
+        GameSounds.play(getContext(), GameSounds.CHIP);
         performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
         persist();
         invalidate();
@@ -178,7 +178,7 @@ public class RouletteView extends View {
         result = rng.nextInt(37);
         spinning = true;
         spinStart = System.currentTimeMillis();
-        GameSounds.play(GameSounds.SPIN);
+        GameSounds.play(getContext(), GameSounds.SPIN);
         performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
         startAngle = wheelAngle;
         int pocket = 0;
@@ -216,7 +216,7 @@ public class RouletteView extends View {
             startParticles();
             GameSounds.play(win >= 10 * tb ? GameSounds.BIG_WIN : GameSounds.WIN);
         } else {
-            GameSounds.play(GameSounds.LOSE);
+            GameSounds.play(getContext(), GameSounds.LOSE);
         }
         while (xp >= xpNeeded()) {
             xp -= xpNeeded();
@@ -281,6 +281,16 @@ public class RouletteView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * 0.011f); p.setColor(0x99FFFFFF);
         cv.drawText("LEVEL", lvX, lvY + lvR * 1.5f, p);
+        // sound toggle
+        float spX = w * 0.93f, spY = h * 0.042f, spR = w * 0.045f;
+        p.setColor(0x66000000);
+        cv.drawCircle(spX, spY, spR, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(0x55FFFFFF);
+        cv.drawCircle(spX, spY, spR, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(spR * 0.9f); p.setTextAlign(Paint.Align.CENTER);
+        cv.drawText(GameSounds.isEnabled(getContext()) ? "\uD83D\uDD0A" : "\uD83D\uDD07", spX, spY + spR * 0.32f, p);
+
 
         // coin pill
         float pillW = w * 0.34f, pillH = h * 0.034f, pillX = w * 0.52f, pillY = h * 0.026f;
@@ -669,6 +679,12 @@ public class RouletteView extends View {
         if (e.getAction() != MotionEvent.ACTION_UP) return true;
         float w = getWidth(), h = getHeight();
         float x = e.getX(), y = e.getY();
+        if (Math.hypot(x - w * 0.93f, y - getHeight() * 0.042f) <= w * 0.06f) {
+            GameSounds.toggle(getContext());
+            invalidate();
+            return true;
+        }
+
         pressedBtn = -1;
 
         // buttons
@@ -685,7 +701,7 @@ public class RouletteView extends View {
         float cy = h * 0.72f;
         for (int i = 0; i < BETS.length; i++) {
             float cx = cx0 + i * (chipR * 2 + chipGap);
-            if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; GameSounds.play(GameSounds.CHIP); persist(); invalidate(); return true; }
+            if (Math.hypot(x - cx, y - cy) <= chipR * 1.3f) { betIdx = i; GameSounds.play(getContext(), GameSounds.CHIP); persist(); invalidate(); return true; }
         }
         if (spinning) return true;
 
