@@ -535,7 +535,7 @@ public class RouletteView extends View {
         for (int c = BETS.length - 1; c >= 0 && stack.size() < 3; c--)
             while (rem >= BETS[c] && stack.size() < 3) { rem -= BETS[c]; stack.add(c); }
         for (int i = 0; i < stack.size(); i++)
-            drawChip(cv, cx, cy + cellH * 0.06f - i * r * 0.45f, r, CHIP_COLORS[stack.get(i)], "", false);
+            drawChip(cv, cx, cy - cellH * 0.22f - i * r * 0.45f, r, CHIP_COLORS[stack.get(i)], "", false);
         p.setColor(0xFFFFFFFF); p.setTextSize(r * 0.9f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
         p.setShadowLayer(3, 0, 1, 0xFF000000);
         cv.drawText("" + amt, cx, cy + cellH * 0.40f, p);

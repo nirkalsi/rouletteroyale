@@ -115,6 +115,10 @@ public class RenderSmokeTest {
         callPrivate(v, "placeBet", String.class, "RED");
         callPrivate(v, "placeBet", String.class, "D2");
         org.junit.Assert.assertEquals("three 10-chip placements must debit 30", 470L, v.getBalance());
+        // settle the count-up animation so the render shows the true balance
+        java.lang.reflect.Field sb = RouletteView.class.getDeclaredField("shownBalance");
+        sb.setAccessible(true);
+        sb.setLong(v, v.getBalance());
         renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-bets.png");
     }
 }
