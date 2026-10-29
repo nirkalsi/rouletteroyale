@@ -121,4 +121,23 @@ public class RenderSmokeTest {
         sb.setLong(v, v.getBalance());
         renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-bets.png");
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void levelUpOverlay() throws Exception {
+        RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
+        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-levelup-plain.png");
+        setField(v, "levelUpPending", 3);
+        setField(v, "levelUpReward", 450L);
+        setField(v, "levelUpShowing", true);
+        setField(v, "levelUpAt", System.currentTimeMillis() - 1000);
+        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-levelup.png");
+    }
+
+    private static void setField(Object o, String name, Object val) throws Exception {
+        java.lang.reflect.Field f = o.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        if (val instanceof Long) f.setLong(o, (Long) val);
+        else if (val instanceof Integer) f.setInt(o, (Integer) val);
+        else if (val instanceof Boolean) f.setBoolean(o, (Boolean) val);
+        else f.set(o, val);
+    }
 }

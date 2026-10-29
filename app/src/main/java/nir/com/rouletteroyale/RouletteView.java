@@ -50,6 +50,11 @@ public class RouletteView extends View {
     private final List<String> placeOrder = new ArrayList<>(); // for UNDO
     private final Set<String> winSpots = new HashSet<>();
     private long winFlashUntil = 0;
+    private int levelUpPending = 0;
+    private long levelUpReward = 0;
+    private boolean levelUpShowing = false;
+    private long levelUpAt = 0;
+    private long settledAt = 0;
 
     private boolean spinning = false;
     private long spinStart = 0;
@@ -223,8 +228,10 @@ public class RouletteView extends View {
             level++;
             long reward = 150L * level;
             balance += reward;
+            levelUpPending = level; levelUpReward += reward;
             if (listener != null) listener.onLevelUp(level, reward);
         }
+        settledAt = System.currentTimeMillis();
         persist();
         if (listener != null) {
             if (win >= 25 * tb) listener.onBigWin(win, tb);
@@ -262,6 +269,43 @@ public class RouletteView extends View {
         drawTable(cv, w, h, now);
         drawControls(cv, w, h, now);
         drawParticles(cv, w, h, now);
+
+        // ---- level-up celebration overlay ----
+        if (levelUpPending > 0 && !levelUpShowing && now - settledAt > 1400) {
+            levelUpShowing = true; levelUpAt = now;
+            GameSounds.play(getContext(), GameSounds.LEVEL_UP);
+        }
+        if (levelUpShowing) {
+            animating = true;
+            float t = Math.min(1f, (now - levelUpAt) / 420f);
+            cv.drawColor(0xB3000000);
+            float sc = easeOutBack(t);
+            cv.save();
+            cv.scale(sc, sc, w / 2f, h * 0.42f);
+            float badgeR = w * 0.15f;
+            p.setStyle(Paint.Style.FILL); p.setColor(0xFFFFD700);
+            cv.drawCircle(w / 2f, h * 0.36f, badgeR, p);
+            p.setColor(0xFFB8860B); p.setTextSize(badgeR * 0.9f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            cv.drawText("" + levelUpPending, w / 2f, h * 0.36f + badgeR * 0.32f, p);
+            p.setFakeBoldText(false);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(w * 0.012f); p.setColor(0x55FFD700);
+            for (int i = 0; i < 12; i++) {
+                double a = Math.PI / 6 * i + now / 900.0;
+                cv.drawLine(w / 2f + (float) Math.cos(a) * badgeR * 1.25f, h * 0.36f + (float) Math.sin(a) * badgeR * 1.25f,
+                        w / 2f + (float) Math.cos(a) * badgeR * 1.6f, h * 0.36f + (float) Math.sin(a) * badgeR * 1.6f, p);
+            }
+            p.setStyle(Paint.Style.FILL);
+            p.setTextSize(h * 0.045f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            p.setShadowLayer(h * 0.008f, 0, h * 0.004f, 0xFF8E0000);
+            p.setColor(0xFFFFE082);
+            cv.drawText("LEVEL UP!", w / 2f, h * 0.53f, p);
+            p.clearShadowLayer(); p.setFakeBoldText(false);
+            p.setColor(0xFFFFFFFF); p.setTextSize(h * 0.022f);
+            cv.drawText("Reward: +" + levelUpReward + " coins", w / 2f, h * 0.575f, p);
+            cv.restore();
+            if (t >= 1f)
+                drawPillButton(cv, w * 0.3f, h * 0.62f, w * 0.4f, h * 0.052f, "COLLECT", 0xFF43A047, 0xFF1B5E20, true, false, 0);
+        }
 
         if (animating) postInvalidateDelayed(32);
     }
@@ -638,6 +682,8 @@ public class RouletteView extends View {
         }
     }
 
+    private float easeOutBack(float t) { float c = 1.70158f; t -= 1f; return 1f + (c + 1f) * t * t * t + c * t * t; }
+
     private void drawPillButton(Canvas cv, float x, float y, float w, float h, String label,
                                 int bgTop, int bgBottom, boolean enabled, boolean pressed, float pulse) {
         float sc = pressed ? 0.94f : 1f;
@@ -682,6 +728,15 @@ public class RouletteView extends View {
         if (Math.hypot(x - w * 0.93f, y - getHeight() * 0.042f) <= w * 0.06f) {
             GameSounds.toggle(getContext());
             invalidate();
+            return true;
+        }
+
+        if (levelUpShowing) {
+            if (x >= w * 0.3f && x <= w * 0.7f && y >= h * 0.62f && y <= h * 0.62f + h * 0.052f) {
+                levelUpShowing = false; levelUpPending = 0; levelUpReward = 0;
+                GameSounds.play(getContext(), GameSounds.CLICK);
+                invalidate();
+            }
             return true;
         }
 
