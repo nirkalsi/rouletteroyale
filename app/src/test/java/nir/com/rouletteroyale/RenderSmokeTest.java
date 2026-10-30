@@ -175,4 +175,19 @@ public class RenderSmokeTest {
         renderView(new RouletteView(RuntimeEnvironment.getApplication()), 960, 1600, "/tmp/renders/rouletteroyale-game-960x1600.png");
     }
 
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void placedBetsSmall() throws Exception {
+        RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
+        v.measure(View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY),
+                  View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY));
+        callPrivate(v, "placeBet", String.class, "N7");
+        callPrivate(v, "placeBet", String.class, "RED");
+        callPrivate(v, "placeBet", String.class, "D2");
+        java.lang.reflect.Field sb = RouletteView.class.getDeclaredField("shownBalance");
+        sb.setAccessible(true);
+        sb.setLong(v, v.getBalance());
+        renderView(v, 960, 1600, "/tmp/renders/rouletteroyale-bets-960x1600.png");
+    }
+
 }
