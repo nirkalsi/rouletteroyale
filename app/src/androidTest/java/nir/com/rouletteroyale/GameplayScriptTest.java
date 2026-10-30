@@ -46,5 +46,12 @@ public class GameplayScriptTest {
         tap(0.24f, 0.584f); Thread.sleep(700);    // bet on RED (even-chances row)
         tap(0.76f, 0.788f); Thread.sleep(12000);  // SPIN, ball settles, WIN banner
         tap(0.5f, 0.646f); Thread.sleep(1500);    // dismiss level-up overlay if shown
+        d.pressHome(); Thread.sleep(2000);
+        android.content.SharedPreferences sp = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .getTargetContext().getSharedPreferences("rouletteroyale", 0);
+        String state = sp.getString("state", "");
+        if (state.isEmpty()) throw new AssertionError("no saved state after scripted spin");
+        long spinsDone = Long.parseLong(state.split(";")[1]);
+        if (spinsDone < 1) throw new AssertionError("spin did not complete, state=" + state);
     }
 }
