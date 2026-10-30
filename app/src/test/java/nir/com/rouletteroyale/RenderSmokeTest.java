@@ -150,4 +150,13 @@ public class RenderSmokeTest {
         else if (val instanceof Boolean) f.setBoolean(o, (Boolean) val);
         else f.set(o, val);
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void coinBurstMidFlight() throws Exception {
+        RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
+        v.coinBurst();
+        java.lang.reflect.Field f = RouletteView.class.getDeclaredField("coinBurstAt");
+        f.setAccessible(true);
+        f.setLong(v, System.currentTimeMillis() - 350);
+        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-coinburst.png");
+    }
 }
