@@ -669,7 +669,8 @@ public class RouletteView extends View {
         float cx0 = w / 2f - rowW / 2f + chipR;
         float cy = h * 0.72f;
         float tableBottom = row0Y(h) + rowH(h) * 5f;
-        float hintY = (tableBottom + (cy - chipR)) / 2f + h * 0.005f; // midway: clears both on short screens
+        float chipTop = cy - chipR * 1.165f - h * 0.006f; // selected chip sits raised, gold ring at r*1.12+stroke
+        float hintY = (tableBottom + chipTop) / 2f + h * 0.004f; // midway: clears both on short screens
         p.setTextAlign(Paint.Align.CENTER); p.setTextSize(h * 0.012f); p.setColor(0x99FFFFFF);
         cv.drawText(totalBet() > 0 ? "TOTAL BET " + totalBet() : "TAP A CHIP, THEN TAP THE TABLE", w / 2, hintY, p);
         for (int i = 0; i < BETS.length; i++) {
