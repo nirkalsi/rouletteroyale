@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Random;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -56,7 +57,17 @@ public class GameplayCaptureTest {
             if (!b1 && el > 500) { call(v, "placeBet", "RED"); b1 = true; }
             else if (b1 && !b2 && el > 1200) { call(v, "placeBet", "N7"); b2 = true; }
             else if (b2 && !b3 && el > 1900) { call(v, "placeBet", "D1"); b3 = true; }
-            else if (b3 && !spun && el > 2800) { call(v, "spin"); spun = true; }
+            else if (b3 && !spun && el > 2800) {
+                // Showcase variant: seed the RNG so the scripted round lands 7 (all three
+                // scripted bets win) - same real game logic and settlement, fixed outcome
+                // only, so the win celebration (banner/particles/big-win) is captured.
+                int seed = 0;
+                while (new Random(seed).nextInt(37) != 7) seed++;
+                Field rngF = RouletteView.class.getDeclaredField("rng");
+                rngF.setAccessible(true);
+                rngF.set(v, new Random(seed));
+                call(v, "spin"); spun = true;
+            }
             else if (spun && !finished && el > 2800 + 3500 && !spinning(v)) { finished = true; }
             else if (spun && !finished && el > 2800 + 3500 && spinning(v)) { call(v, "finishSpin"); finished = true; }
             v.draw(c);
