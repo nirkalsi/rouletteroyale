@@ -159,4 +159,20 @@ public class RenderSmokeTest {
         f.setLong(v, System.currentTimeMillis() - 350);
         renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-coinburst.png");
     }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void spinResult() throws Exception {
+        RouletteView v = new RouletteView(RuntimeEnvironment.getApplication());
+        setField(v, "result", 17);
+        setField(v, "spinning", false);
+        setField(v, "lastWin", 350L);
+        setField(v, "winFlashUntil", System.currentTimeMillis() + 1500);
+        renderView(v, 1080, 2243, "/tmp/renders/rouletteroyale-result.png");
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void renderGameViewSmall() throws Exception {
+        renderView(new RouletteView(RuntimeEnvironment.getApplication()), 960, 1600, "/tmp/renders/rouletteroyale-game-960x1600.png");
+    }
+
 }

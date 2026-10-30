@@ -410,6 +410,11 @@ public class RouletteView extends View {
 
     private void drawWheel(Canvas cv, float w, float h, long now) {
         float wheelCy = h * 0.236f, wheelR = w * 0.30f;
+        {   // short screens: shrink the wheel so the info band and balance pill stay clear
+            float maxBottom = row0Y(h) - rowH(h) * 1.08f - h * 0.032f;
+            if (wheelCy + wheelR * 1.11f > maxBottom)
+                wheelR = Math.max(h * 0.10f, (maxBottom - wheelCy) / 1.11f);
+        }
         if (spinning) {
             float t = Math.min(1f, (now - spinStart) / (float) SPIN_MS);
             float ease = 1f - (1f - t) * (1f - t) * (1f - t);
@@ -485,9 +490,9 @@ public class RouletteView extends View {
             int col = result == 0 ? 0xFF2E8B57 : (isRed(result) ? 0xFFFF5252 : 0xFFB0BEC5);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(h * 0.016f); p.setColor(0x99FFFFFF);
-            cv.drawText("LAST RESULT", w / 2, h * 0.412f, p);
-            p.setTextSize(h * 0.022f); p.setFakeBoldText(true); p.setColor(col);
-            cv.drawText(label, w / 2, h * 0.432f, p);
+            cv.drawText("LAST RESULT", w / 2, h * 0.404f, p);
+            p.setTextSize(h * 0.021f); p.setFakeBoldText(true); p.setColor(col);
+            cv.drawText(label, w / 2, h * 0.424f, p);
             p.setFakeBoldText(false);
         } else if (!spinning) {
             p.setTextAlign(Paint.Align.CENTER);
@@ -499,11 +504,17 @@ public class RouletteView extends View {
             float t = 1f - (winFlashUntil - now) / 2200f;
             float scale = t < 0.2f ? 0.5f + 2.5f * t : 1f;
             p.setTextAlign(Paint.Align.CENTER);
-            p.setTextSize(h * 0.030f * scale);
+            p.setTextSize(h * 0.034f * scale);
             p.setFakeBoldText(true);
+            String winTxt = "WIN +" + String.format("%,d", lastWin);
+            float tw = p.measureText(winTxt);
+            float cy = h * 0.236f + h * 0.012f; // wheel center; the band below already carries LAST RESULT
+            float pad = h * 0.012f;
+            p.setColor(0xB0000000);
+            cv.drawRoundRect(w / 2 - tw / 2 - pad, cy - h * 0.034f * scale, w / 2 + tw / 2 + pad, cy + h * 0.010f, 18, 18, p);
             p.setColor(0xFF7CFC00);
             p.setShadowLayer(12, 0, 0, 0xAA7CFC00);
-            cv.drawText("WIN +" + String.format("%,d", lastWin), w / 2, h * 0.45f, p);
+            cv.drawText(winTxt, w / 2, cy, p);
             p.clearShadowLayer();
             p.setFakeBoldText(false);
             animating = true;
@@ -657,8 +668,10 @@ public class RouletteView extends View {
         float rowW = BETS.length * chipR * 2 + (BETS.length - 1) * chipGap;
         float cx0 = w / 2f - rowW / 2f + chipR;
         float cy = h * 0.72f;
+        float tableBottom = row0Y(h) + rowH(h) * 5f;
+        float hintY = (tableBottom + (cy - chipR)) / 2f + h * 0.005f; // midway: clears both on short screens
         p.setTextAlign(Paint.Align.CENTER); p.setTextSize(h * 0.012f); p.setColor(0x99FFFFFF);
-        cv.drawText(totalBet() > 0 ? "TOTAL BET " + totalBet() : "TAP A CHIP, THEN TAP THE TABLE", w / 2, cy - chipR * 1.45f, p);
+        cv.drawText(totalBet() > 0 ? "TOTAL BET " + totalBet() : "TAP A CHIP, THEN TAP THE TABLE", w / 2, hintY, p);
         for (int i = 0; i < BETS.length; i++) {
             boolean sel = i == betIdx;
             drawChip(cv, cx0 + i * (chipR * 2 + chipGap), cy + (sel ? -h * 0.006f : 0), chipR, CHIP_COLORS[i], "" + BETS[i], sel);
