@@ -536,9 +536,11 @@ public class RouletteView extends View {
         p.setColor(spotBg("N0", now));
         cv.drawRoundRect(rf, 8, 8, p);
         cellStroke(cv, "N0");
-        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(rh * 0.55f);
+        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(rh * 0.66f);
         p.setColor(0xFFFFFFFF); p.setFakeBoldText(true);
-        cv.drawText("0", rf.centerX(), rf.centerY() + rh * 0.2f, p);
+        p.setShadowLayer(4, 0, 2, 0x66000000);
+        cv.drawText("0", rf.centerX(), rf.centerY() + rh * 0.24f, p);
+        p.clearShadowLayer();
         p.setFakeBoldText(false);
         drawStakedChips(cv, "N0", rf.left, rf.top, rf.width(), rh);
 
@@ -547,24 +549,33 @@ public class RouletteView extends View {
             int col = (n - 1) / 3;
             int row = 2 - (n - 1) % 3;         // 0 top .. 2 bottom
             float cx0 = x0 + col * cw, cy0 = y0 + row * rh;
-            rf.set(cx0 + 1, cy0 + 1, cx0 + cw - 1, cy0 + rh - 1);
-            p.setColor(spotBg("N" + n, now));
-            cv.drawRect(rf, p);
+            rf.set(cx0 + 2, cy0 + 2, cx0 + cw - 2, cy0 + rh - 2);
+            int base = spotBg("N" + n, now);
+            p.setShader(new LinearGradient(0, rf.top, 0, rf.bottom, lighten(base, 1.30f), base, Shader.TileMode.CLAMP));
+            cv.drawRoundRect(rf, 7, 7, p);
+            p.setShader(null);
             cellStroke(cv, "N" + n);
-            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.42f); p.setTextAlign(Paint.Align.CENTER);
-            cv.drawText(String.valueOf(n), rf.centerX(), rf.centerY() + rh * 0.15f, p);
+            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.55f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            p.setShadowLayer(3, 0, 2, 0x77000000);
+            cv.drawText(String.valueOf(n), rf.centerX(), rf.centerY() + rh * 0.20f, p);
+            p.clearShadowLayer();
+            p.setFakeBoldText(false);
             drawStakedChips(cv, "N" + n, rf.left, rf.top, cw, rh);
         }
 
         // column bets 2:1 (right strip, one per row)
         for (int r = 0; r < 3; r++) {
             String spot = "C" + (3 - r);        // top row numbers %3==0 -> C3, bottom %3==1 -> C1
-            rf.set(x0 + tblW(w) + 2, y0 + r * rh + 1, x0 + tblW(w) + w * 0.14f - 2, y0 + (r + 1) * rh - 1);
-            p.setColor(spotBg(spot, now));
-            cv.drawRect(rf, p);
+            rf.set(x0 + tblW(w) + 3, y0 + r * rh + 2, x0 + tblW(w) + w * 0.14f - 3, y0 + (r + 1) * rh - 2);
+            int cb = spotBg(spot, now);
+            p.setShader(new LinearGradient(0, rf.top, 0, rf.bottom, lighten(cb, 1.30f), cb, Shader.TileMode.CLAMP));
+            cv.drawRoundRect(rf, 7, 7, p);
+            p.setShader(null);
             cellStroke(cv, spot);
-            p.setColor(0xFFFFD700); p.setTextSize(rh * 0.34f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
-            cv.drawText("2:1", rf.centerX(), rf.centerY() + rh * 0.12f, p);
+            p.setColor(0xFFFFD700); p.setTextSize(rh * 0.40f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            p.setShadowLayer(3, 0, 1, 0x66000000);
+            cv.drawText("2:1", rf.centerX(), rf.centerY() + rh * 0.14f, p);
+            p.clearShadowLayer();
             p.setFakeBoldText(false);
             drawStakedChips(cv, spot, rf.left, rf.top, rf.width(), rh);
         }
@@ -578,8 +589,9 @@ public class RouletteView extends View {
             p.setColor(spotBg(spot, now));
             cv.drawRoundRect(rf, 6, 6, p);
             cellStroke(cv, spot);
-            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.38f); p.setTextAlign(Paint.Align.CENTER);
-            cv.drawText(dLabels[d - 1], rf.centerX(), rf.centerY() + rh * 0.13f, p);
+            p.setColor(0xFFFFFFFF); p.setTextSize(rh * 0.42f); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true);
+            cv.drawText(dLabels[d - 1], rf.centerX(), rf.centerY() + rh * 0.15f, p);
+            p.setFakeBoldText(false);
             drawStakedChips(cv, spot, rf.left, rf.top, rf.width(), rh);
         }
 
@@ -628,14 +640,21 @@ public class RouletteView extends View {
     }
 
     private void cellStroke(Canvas cv, String spot) {
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(1.5f); p.setColor(0x55FFFFFF);
-        cv.drawRect(rf, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(1.5f); p.setColor(0x66FFFFFF);
+        cv.drawRoundRect(rf, 7, 7, p);
         p.setStyle(Paint.Style.FILL);
         if (bets.containsKey(spot)) {
-            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3); p.setColor(0xFFFFD700);
-            cv.drawRect(rf, p);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3.5f); p.setColor(0xFFFFD700);
+            cv.drawRoundRect(rf, 7, 7, p);
             p.setStyle(Paint.Style.FILL);
         }
+    }
+
+    private int lighten(int color, float f) {
+        float[] hsv = new float[3];
+        android.graphics.Color.colorToHSV(color, hsv);
+        hsv[2] = Math.min(1f, hsv[2] * f);
+        return android.graphics.Color.HSVToColor(hsv);
     }
 
     private void drawStakedChips(Canvas cv, String spot, float left, float top, float cw, float cellH) {
