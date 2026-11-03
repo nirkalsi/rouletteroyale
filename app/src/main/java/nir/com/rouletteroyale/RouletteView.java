@@ -6,7 +6,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import java.util.*;
 
-/** Roulette Royale - free social roulette. Virtual coins only, no real money, no prizes.
+/** Roulette Regency - free social roulette. Virtual coins only, no real money, no prizes.
  *  Casino-table redesign: full betting layout (straight, dozens, columns, even chances),
  *  multi-chip placement, wheel + ball spin animation, win celebrations. */
 public class RouletteView extends View {
