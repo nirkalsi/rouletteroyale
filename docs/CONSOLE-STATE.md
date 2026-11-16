@@ -73,3 +73,7 @@ upload + submit the approved Regency package.
   verified test-ad evidence Nov 1 11:54. OPEN before any v6 submission: BJ deck/suit-model
   conflict (todo-01M6AXHE "suits derive from rank" vs commit bd8beb9 "independent per-card
   suits"), full release verification, and an explicit production-submission decision.
+
+## 2026-11-16 unit tests + BJ bannercheck
+- Unit suites (deep-redesign, v6 code): BJ 14 classes/46 tests, VP 13 classes/52 tests - all green, 0 fail/error/skip (gradle testDebugUnitTest, junit XML verified; earlier "no results" was chunked runs killed before results write).
+- BJ banner check: AdsManager instrumentation hooks + BannerLoadScriptTest added (commit 13f7ae1, deep-redesign). bannercheck APKs (Google sample ad IDs only, dex-verified) archived in app-release-aabs as blackjack21-13f7ae1-bannercheck-{sampleads,androidTest}.apk and handed to main for pipeline Test Lab free-quota run. Result pending.
