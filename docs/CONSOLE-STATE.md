@@ -77,3 +77,9 @@ upload + submit the approved Regency package.
 ## 2026-11-16 unit tests + BJ bannercheck
 - Unit suites (deep-redesign, v6 code): BJ 14 classes/46 tests, VP 13 classes/52 tests - all green, 0 fail/error/skip (gradle testDebugUnitTest, junit XML verified; earlier "no results" was chunked runs killed before results write).
 - BJ banner check: AdsManager instrumentation hooks + BannerLoadScriptTest added (commit 13f7ae1, deep-redesign). bannercheck APKs (Google sample ad IDs only, dex-verified) archived in app-release-aabs as blackjack21-13f7ae1-bannercheck-{sampleads,androidTest}.apk and handed to main for pipeline Test Lab free-quota run. Result pending.
+
+## 2026-11-16 13:10 IST - BJ banner check PASSED (Test Lab)
+- bannerLoadsAfterFirstRound: 1/1 passed, 30.192s, 0 fail/error/skip (XML verified). Medium Phone arm64, API 36, en_US, portrait. Matrix: console.firebase.google.com/project/qa-learning-b9412/testlab/histories/bh.2cc711fc4f3a53cd/matrices/5572787356391564348/details
+- Own frame-by-frame review of the 38s video: no banner at launch or during play (attaches only after first completed round, as designed); real round completed (player 21 vs dealer 22, YOU WIN +5); test-ad banner fully painted at bottom from ~24s; "Test Ad" label + "You've loaded a test ad from AdMob" creative; no ad clicks; foreground never left the app. Transient +200 daily-coins toast overlapped the banner top edge at ~30s - cosmetic, self-dismissing.
+- Scope: virtual-device SAMPLE-ad load verified. NOT production fill/revenue/physical-device proof.
+- Both BJ and VP now have device-verified sample-banner evidence. Pre-v6-submission checks complete: unit suites green (BJ 46, VP 52), v6 AAB artifact verification green (IDs, icons, signing vs live v5), banners verified.
