@@ -95,3 +95,8 @@ upload + submit the approved Regency package.
 ## 2026-11-16 14:01 IST - BJ/VP v6 LIVE
 - Google review completed ~25-30 min after submission. Both production tracks verified 13:59-14:01 IST: Active, latest release 6 (1.5), 172 countries/regions, full rollout (100%). Publishing overview "Last published on 16 November 2026", nothing in review.
 - BJ/VP redesign + sidebet/multihand work is SHIPPED. Review-outcome wake deleted. RL still held (support draft parked); TT untouched.
+
+## 2026-11-16 14:05 IST - dashboard recommendation triage (advisory only)
+- "Outdated SDK androidx.fragment:fragment": library developer marks bundled 1.1.0 outdated, Console says "Consider updating to 1.2.1+ before publishing changes". Category Technical quality. Advisory recommendation, NOT policy, no deadline, did not block v6 publish.
+- "R8 optimisation": optimized resource shrinking not enabled + suggestion to upgrade AGP to 9.0+. Category Memory usage. Optional.
+- No action taken; candidates for future dependency/AGP bump work. Store-screenshot outcome for v6 remains open separately.
