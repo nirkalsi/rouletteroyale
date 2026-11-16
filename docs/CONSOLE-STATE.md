@@ -45,3 +45,31 @@ Set app availability to Published".
   monetization unchanged (coin packs only, no remove-ads offer, no interstitials).
   Store-screenshot candidates are LOCAL Robolectric renders (not device): shot1-bets,
   shot2-spin, shot4-win (1080x1920).
+
+## Update 16.11.2026 11:44 IST - managed-publishing control investigation (read-only, no mutations)
+Verified live as kalsinirch (lease released) + Google docs answer/9859654 and answer/9859751:
+- The managed publishing listbox RENDERS on the removed app's Publishing overview with
+  "Managed publishing on - You control when approved changes are published" selectable.
+  Turn-on NOT attempted (settings change, needs approval). Docs prerequisite "app must already
+  be available" leaves engagement on a removed app unverified.
+- Staged landmine re-verified: availability row still offers ONLY "View change"; no Save for
+  later, no discard. Trader declaration still staged alongside it ("Submit 2 changes").
+- Docs: managed publishing holds approved releases/listings/app-content, but its NOT-held list
+  includes "Unpublishing your app" - availability-direction changes bypass the hold at least one
+  way; the publish direction is undocumented. answer/9859751: a Removed app is reinstated BY a
+  policy-compliant update - approval may itself restore availability regardless.
+- RL Production track still offers "Create new release" on the removed app (track Inactive,
+  last release 5 (1.4)).
+Conclusion: the Nov 3 approved submission cannot be executed with a guaranteed-hidden outcome
+today. Safe path: (a) approval to turn managed publishing ON, (b) Google Play support case to
+clear the staged availability change and confirm hold coverage for reinstatement, (c) then
+upload + submit the approved Regency package.
+
+## BJ/VP reconciliation 16.11.2026 (from main's continuity audit)
+- Live production = 5 (1.4) on both, i.e. design-overhaul commits (BJ 6861496, VP be3dd18),
+  byte-matched to archived AABs 08.11. Deep-redesign v6/1.5 (BJ c664218, VP 92e0d7b) = approved
+  redesign+features, implemented, NEVER submitted; no user cancellation on record Nov 1-16.
+- Icons shipped Nov 1 via Store Listing submissions (Published). Banner question answered with
+  verified test-ad evidence Nov 1 11:54. OPEN before any v6 submission: BJ deck/suit-model
+  conflict (todo-01M6AXHE "suits derive from rank" vs commit bd8beb9 "independent per-card
+  suits"), full release verification, and an explicit production-submission decision.
