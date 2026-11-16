@@ -100,3 +100,9 @@ upload + submit the approved Regency package.
 - "Outdated SDK androidx.fragment:fragment": library developer marks bundled 1.1.0 outdated, Console says "Consider updating to 1.2.1+ before publishing changes". Category Technical quality. Advisory recommendation, NOT policy, no deadline, did not block v6 publish.
 - "R8 optimisation": optimized resource shrinking not enabled + suggestion to upgrade AGP to 9.0+. Category Memory usage. Optional.
 - No action taken; candidates for future dependency/AGP bump work. Store-screenshot outcome for v6 remains open separately.
+
+## 2026-11-16 17:53 IST - Store-capture package ready (documented screenshot route)
+- StoreCaptureScriptTest written for BJ (6 photogenic shots) and VP (5 shots, seeded 5-hand mode); consent handler reused from BannerLoadScriptTest; taps reuse proven GameplayScriptTest fractions.
+- Screenshot mechanism: androidx Screenshot.capture() + FirebaseScreenCaptureProcessor (com.google.firebase:testlab-instr-lib:0.2, androidTest-only dep). TestStorage route abandoned (test-services:1.5.2 does not exist on Google Maven/Central).
+- Sources: blackjack21 deep-redesign @ b85cd6a0, videopoker deep-redesign @ 45b97170. APKs in nirkalsi/app-release-aabs @ 5b1dfb7a: *-storecapture-sampleids.apk (BJ 24db0e8c.., VP 96ba310d..) + *-storecapture-test.apk (BJ 6fb3bf83.., VP e56034d8..). Dex-verified sample ad IDs only; one test class per test APK.
+- Awaiting pipeline Test Lab free-capacity run (Medium Phone arm64 API 36 en_US portrait, 10-min timeout, single device). Captures then go to BJ/VP Console listings (todo-01M697B97SQRYQHM3PPQ6AA20N). RL/TT untouched.
