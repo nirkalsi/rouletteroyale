@@ -91,3 +91,7 @@ upload + submit the approved Regency package.
 - Release notes (both, en-GB, tagged multi-line format): BJ "Completely redesigned casino table. New optional side bets: Perfect Pairs and 21+3. Stability and performance improvements." / VP "Completely redesigned casino experience. Play up to 5 hands at once with multi-hand mode. Stability and performance improvements."
 - Console release-notes field quirk: angle-bracket language tags only survive via focus-field value fill with tags on their own lines (Oct 31 recipe); keystroke chunks work but blur must not hit another input mid-dispatch.
 - IN REVIEW != LIVE: quick checks then Google review; nothing published yet. RL submission remains HELD (support draft parked with Nir). TT untouched.
+
+## 2026-11-16 14:01 IST - BJ/VP v6 LIVE
+- Google review completed ~25-30 min after submission. Both production tracks verified 13:59-14:01 IST: Active, latest release 6 (1.5), 172 countries/regions, full rollout (100%). Publishing overview "Last published on 16 November 2026", nothing in review.
+- BJ/VP redesign + sidebet/multihand work is SHIPPED. Review-outcome wake deleted. RL still held (support draft parked); TT untouched.
